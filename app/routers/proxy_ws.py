@@ -21,11 +21,12 @@ from starlette.websockets import WebSocketDisconnect
 
 router = APIRouter(tags=["Proxy"])
 
-# Map from URL path → local Xray inbound port (must match xray_config.json)
-_WS_ROUTES: dict[str, int] = {
-    "/vmess": 2095,
-    "/vless": 2096,
-    "/trojan": 2097,
+# Map from URL path → (local Xray inbound port, upstream WS path)
+# The path MUST match wsSettings.path in xray_config.json
+_WS_ROUTES: dict[str, tuple[int, str]] = {
+    "/vmess":  (2095, "/vmess"),
+    "/vless":  (2096, "/vless"),
+    "/trojan": (2097, "/trojan"),
 }
 
 
@@ -54,10 +55,12 @@ async def _pipe_upstream_to_client(upstream, client: WebSocket):
         pass
 
 
-async def _proxy(client: WebSocket, target_port: int):
+async def _proxy(client: WebSocket, target_port: int, target_path: str):
     await client.accept()
 
-    uri = f"ws://127.0.0.1:{target_port}"
+    # BUG FIX: Include the WS path so Xray can match the correct inbound.
+    # Previously was f"ws://127.0.0.1:{target_port}" (no path → Xray returned HTTP 404).
+    uri = f"ws://127.0.0.1:{target_port}{target_path}"
     try:
         async with ws_connect(uri, ping_interval=None, close_timeout=5) as upstream:
             done, pending = await asyncio.wait(
@@ -69,7 +72,11 @@ async def _proxy(client: WebSocket, target_port: int):
             )
             for task in pending:
                 task.cancel()
-    except (websockets.exceptions.ConnectionClosed, OSError):
+    except (
+        websockets.exceptions.ConnectionClosed,
+        websockets.exceptions.InvalidStatus,  # BUG FIX: catch 404/non-101 from Xray
+        OSError,
+    ):
         pass
     finally:
         try:
@@ -80,14 +87,17 @@ async def _proxy(client: WebSocket, target_port: int):
 
 @router.websocket("/vmess")
 async def vmess_ws(websocket: WebSocket):
-    await _proxy(websocket, _WS_ROUTES["/vmess"])
+    port, path = _WS_ROUTES["/vmess"]
+    await _proxy(websocket, port, path)
 
 
 @router.websocket("/vless")
 async def vless_ws(websocket: WebSocket):
-    await _proxy(websocket, _WS_ROUTES["/vless"])
+    port, path = _WS_ROUTES["/vless"]
+    await _proxy(websocket, port, path)
 
 
 @router.websocket("/trojan")
 async def trojan_ws(websocket: WebSocket):
-    await _proxy(websocket, _WS_ROUTES["/trojan"])
+    port, path = _WS_ROUTES["/trojan"]
+    await _proxy(websocket, port, path)
