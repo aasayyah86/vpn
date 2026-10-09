@@ -43,10 +43,18 @@ temp_table = sa.sql.table(
 
 
 def upgrade():
-    # temp type to use instead of old one
-    temp_type.create(op.get_bind(), checkfirst=False)
+    bind = op.get_bind()
+    dialect = bind.dialect.name
 
-    # changing of column type from old enum to new one.
+    # temp type to use instead of old one
+    temp_type.create(bind, checkfirst=False)
+
+    # PostgreSQL: DROP DEFAULT before ALTER COLUMN TYPE
+    # because PostgreSQL cannot auto-cast the existing DEFAULT value to the new enum type
+    if dialect == 'postgresql':
+        op.execute(f'ALTER TABLE {table_name} ALTER COLUMN {column_name} DROP DEFAULT')
+
+    # changing of column type from old enum to temp one.
     # SQLite will create temp table for this
     with op.batch_alter_table(table_name) as batch_op:
         batch_op.alter_column(
@@ -57,11 +65,22 @@ def upgrade():
             postgresql_using=f"{column_name}::text::{temp_enum_name}"
         )
 
-    # remove old enum, create new enum
-    old_type.drop(op.get_bind(), checkfirst=False)
-    new_type.create(op.get_bind(), checkfirst=False)
+    # PostgreSQL: restore DEFAULT using new temp enum type
+    if dialect == 'postgresql':
+        op.execute(
+            f"ALTER TABLE {table_name} ALTER COLUMN {column_name} "
+            f"SET DEFAULT 'none'::{temp_enum_name}"
+        )
 
-    # changing of column type from temp enum to new one.
+    # remove old enum, create new enum
+    old_type.drop(bind, checkfirst=False)
+    new_type.create(bind, checkfirst=False)
+
+    # PostgreSQL: DROP DEFAULT again before second ALTER COLUMN TYPE
+    if dialect == 'postgresql':
+        op.execute(f'ALTER TABLE {table_name} ALTER COLUMN {column_name} DROP DEFAULT')
+
+    # changing of column type from temp enum to final new one.
     # SQLite will create temp table for this
     with op.batch_alter_table(table_name) as batch_op:
         batch_op.alter_column(
@@ -72,11 +91,21 @@ def upgrade():
             postgresql_using=f"{column_name}::text::{enum_name}"
         )
 
+    # PostgreSQL: restore DEFAULT using final new enum type
+    if dialect == 'postgresql':
+        op.execute(
+            f"ALTER TABLE {table_name} ALTER COLUMN {column_name} "
+            f"SET DEFAULT 'none'::{enum_name}"
+        )
+
     # remove temp enum
-    temp_type.drop(op.get_bind(), checkfirst=False)
+    temp_type.drop(bind, checkfirst=False)
 
 
 def downgrade():
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+
     # old enum don't have new value anymore.
     # before downgrading from new enum to old one,
     # we should replace new value from new enum with
@@ -89,7 +118,11 @@ def downgrade():
     )
     op.execute(update_query)
 
-    temp_type.create(op.get_bind(), checkfirst=False)
+    temp_type.create(bind, checkfirst=False)
+
+    # PostgreSQL: DROP DEFAULT before ALTER COLUMN TYPE
+    if dialect == 'postgresql':
+        op.execute(f'ALTER TABLE {table_name} ALTER COLUMN {column_name} DROP DEFAULT')
 
     with op.batch_alter_table(table_name) as batch_op:
         batch_op.alter_column(
@@ -100,8 +133,19 @@ def downgrade():
             postgresql_using=f"{column_name}::text::{temp_enum_name}"
         )
 
-    new_type.drop(op.get_bind(), checkfirst=False)
-    old_type.create(op.get_bind(), checkfirst=False)
+    # PostgreSQL: restore DEFAULT with temp enum type
+    if dialect == 'postgresql':
+        op.execute(
+            f"ALTER TABLE {table_name} ALTER COLUMN {column_name} "
+            f"SET DEFAULT 'none'::{temp_enum_name}"
+        )
+
+    new_type.drop(bind, checkfirst=False)
+    old_type.create(bind, checkfirst=False)
+
+    # PostgreSQL: DROP DEFAULT before final ALTER COLUMN TYPE
+    if dialect == 'postgresql':
+        op.execute(f'ALTER TABLE {table_name} ALTER COLUMN {column_name} DROP DEFAULT')
 
     with op.batch_alter_table(table_name) as batch_op:
         batch_op.alter_column(
@@ -112,4 +156,11 @@ def downgrade():
             postgresql_using=f"{column_name}::text::{enum_name}"
         )
 
-    temp_type.drop(op.get_bind(), checkfirst=False)
+    # PostgreSQL: restore DEFAULT with old enum type
+    if dialect == 'postgresql':
+        op.execute(
+            f"ALTER TABLE {table_name} ALTER COLUMN {column_name} "
+            f"SET DEFAULT 'none'::{enum_name}"
+        )
+
+    temp_type.drop(bind, checkfirst=False)
