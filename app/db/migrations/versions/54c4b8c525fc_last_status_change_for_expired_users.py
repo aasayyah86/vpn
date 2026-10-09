@@ -30,7 +30,7 @@ users_table = sa.Table(
 def upgrade() -> None:
     connection = op.get_bind()
 
-    # MySQL and SQLite handle datetime conversion differently
+    # Each database has its own function to convert a Unix timestamp to a datetime
     if connection.engine.name == "mysql":
         # For MySQL: Use FROM_UNIXTIME
         update_stmt = (
@@ -42,6 +42,18 @@ def upgrade() -> None:
                 )
             )
             .values(last_status_change=func.from_unixtime(users_table.c.expire))
+        )
+    elif connection.engine.name == "postgresql":
+        # For PostgreSQL: Use to_timestamp() which converts a Unix epoch integer to timestamptz
+        update_stmt = (
+            sa.update(users_table)
+            .where(
+                sa.and_(
+                    users_table.c.status == 'expired',
+                    users_table.c.expire.isnot(None)
+                )
+            )
+            .values(last_status_change=func.to_timestamp(users_table.c.expire))
         )
     else:
         # For SQLite: Use DATETIME with 'unixepoch'
