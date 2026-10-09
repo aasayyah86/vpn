@@ -7,7 +7,7 @@ from pathlib import PosixPath
 from typing import Union
 
 import commentjson
-from sqlalchemy import func, cast, String
+from sqlalchemy import func, cast, String, Text
 
 from app.db import GetDB
 from app.db import models as db_models
@@ -379,7 +379,7 @@ class XRayConfig(dict):
                 func.lower(cast(db_models.Proxy.type, String)),
                 db_models.User.id,
                 db_models.User.username,
-                db_models.Proxy.settings,
+                cast(db_models.Proxy.settings, Text),
             )
             result = query.all()
 
