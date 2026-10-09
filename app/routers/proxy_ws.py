@@ -9,8 +9,13 @@ single Railway domain.
 
 import asyncio
 
+# websockets 13+ has asyncio submodule; 12.x does not — handle both
+try:
+    from websockets.asyncio.client import connect as ws_connect
+except ImportError:
+    from websockets.legacy.client import connect as ws_connect  # type: ignore[no-redef]
+
 import websockets
-from websockets.asyncio.client import connect
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
@@ -54,7 +59,7 @@ async def _proxy(client: WebSocket, target_port: int):
 
     uri = f"ws://127.0.0.1:{target_port}"
     try:
-        async with connect(uri, ping_interval=None, close_timeout=5) as upstream:
+        async with ws_connect(uri, ping_interval=None, close_timeout=5) as upstream:
             done, pending = await asyncio.wait(
                 [
                     asyncio.create_task(_pipe_client_to_upstream(client, upstream)),
