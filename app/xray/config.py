@@ -7,7 +7,7 @@ from pathlib import PosixPath
 from typing import Union
 
 import commentjson
-from sqlalchemy import func
+from sqlalchemy import func, cast, String
 
 from app.db import GetDB
 from app.db import models as db_models
@@ -365,7 +365,7 @@ class XRayConfig(dict):
             query = db.query(
                 db_models.User.id,
                 db_models.User.username,
-                func.lower(db_models.Proxy.type).label('type'),
+                func.lower(cast(db_models.Proxy.type, String)).label('type'),
                 db_models.Proxy.settings,
                 func.group_concat(db_models.excluded_inbounds_association.c.inbound_tag).label('excluded_inbound_tags')
             ).join(
@@ -376,7 +376,7 @@ class XRayConfig(dict):
             ).filter(
                 db_models.User.status.in_([UserStatus.active, UserStatus.on_hold])
             ).group_by(
-                func.lower(db_models.Proxy.type),
+                func.lower(cast(db_models.Proxy.type, String)),
                 db_models.User.id,
                 db_models.User.username,
                 db_models.Proxy.settings,
