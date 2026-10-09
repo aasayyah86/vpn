@@ -366,7 +366,7 @@ class XRayConfig(dict):
                 db_models.User.id,
                 db_models.User.username,
                 func.lower(cast(db_models.Proxy.type, String)).label('type'),
-                db_models.Proxy.settings,
+                cast(db_models.Proxy.settings, Text).label('settings'),
                 func.string_agg(db_models.excluded_inbounds_association.c.inbound_tag, ',').label('excluded_inbound_tags')
             ).join(
                 db_models.Proxy, db_models.User.id == db_models.Proxy.user_id
@@ -389,7 +389,7 @@ class XRayConfig(dict):
                 grouped_data[row.type].append((
                     row.id,
                     row.username,
-                    row.settings,
+                    json.loads(row.settings) if isinstance(row.settings, str) else row.settings,
                     [i for i in row.excluded_inbound_tags.split(',') if i] if row.excluded_inbound_tags else None
                 ))
 
