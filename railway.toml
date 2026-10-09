@@ -1,0 +1,8 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "bash -c 'alembic upgrade head; python main.py'"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
